@@ -1,0 +1,49 @@
+# GitLab CI/CD pipeline cho DevShop
+# Các stage: install -> build -> test
+
+stages:
+  - install
+  - build
+  - test
+
+variables:
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .npm/
+    - node_modules/
+
+# Cài đặt dependencies
+install:
+  stage: install
+  image: node:22-alpine
+  script:
+    - npm ci
+  artifacts:
+    paths:
+      - node_modules/
+    expire_in: 1 hour
+
+# Build production
+build:
+  stage: build
+  image: node:22-alpine
+  dependencies:
+    - install
+  script:
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# Chạy unit test cơ bản
+test:
+  stage: test
+  image: node:22-alpine
+  dependencies:
+    - install
+  script:
+    - npm run test
