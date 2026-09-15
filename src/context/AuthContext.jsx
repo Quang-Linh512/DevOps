@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { authService } from '../services/authService'
 
 const AuthContext = createContext(null)
 
 const USERS_KEY = 'devshop_users'
 const USER_KEY = 'devshop_user'
 
-/** Tài khoản demo mặc định */
+/** Tài khoản demo mặc định — role do hệ thống auth gán */
 const DEMO_USERS = [
   {
     id: 1,
@@ -14,8 +15,10 @@ const DEMO_USERS = [
     phone: '0901234567',
     password: '123456',
     role: 'admin',
+    status: 'active',
     address: '123 Đường DevOps, Quận 1, TP.HCM',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=admin',
+    createdAt: '2024-01-01T00:00:00.000Z',
   },
 ]
 
@@ -26,10 +29,24 @@ function loadUsers() {
     return DEMO_USERS
   }
   try {
-    return JSON.parse(raw)
+    const users = JSON.parse(raw)
+    // Đảm bảo admin demo vẫn tồn tại nếu bị xóa nhầm
+    if (!users.some((u) => u.email === 'admin@devshop.com')) {
+      users.unshift(DEMO_USERS[0])
+      localStorage.setItem(USERS_KEY, JSON.stringify(users))
+    }
+    return users
   } catch {
     localStorage.setItem(USERS_KEY, JSON.stringify(DEMO_USERS))
     return DEMO_USERS
+  }
+}
+
+function toSafeUser(user) {
+  const { password: _, ...safeUser } = user
+  return {
+    ...safeUser,
+    status: safeUser.status || 'active',
   }
 }
 
@@ -37,7 +54,6 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // Khôi phục phiên đăng nhập khi refresh
   useEffect(() => {
     loadUsers()
     const raw = localStorage.getItem(USER_KEY)
@@ -61,8 +77,11 @@ export function AuthProvider({ children }) {
       return { success: false, message: 'Email hoặc mật khẩu không đúng' }
     }
 
-    // Không lưu password vào session
-    const { password: _, ...safeUser } = found
+    if ((found.status || 'active') === 'blocked') {
+      return { success: false, message: 'Tài khoản đã bị khóa. Liên hệ quản trị viên.' }
+    }
+
+    const safeUser = toSafeUser(found)
     localStorage.setItem(USER_KEY, JSON.stringify(safeUser))
     setUser(safeUser)
     return { success: true, user: safeUser }
@@ -85,8 +104,10 @@ export function AuthProvider({ children }) {
       phone: formData.phone,
       password: formData.password,
       role: 'user',
+      status: 'active',
       address: '',
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${encodeURIComponent(formData.email)}`,
+      createdAt: new Date().toISOString(),
     }
 
     users.push(newUser)
@@ -99,21 +120,42 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  /** Không cho user tự gán role/password qua updateProfile */
   const updateProfile = (updates) => {
     if (!user) return
+
+    const allowed = {
+      name: updates.name,
+      phone: updates.phone,
+      address: updates.address,
+      avatar: updates.avatar,
+    }
+    Object.keys(allowed).forEach((k) => {
+      if (allowed[k] === undefined) delete allowed[k]
+    })
 
     const users = loadUsers()
     const idx = users.findIndex((u) => u.id === user.id)
     if (idx !== -1) {
-      users[idx] = { ...users[idx], ...updates }
+      users[idx] = { ...users[idx], ...allowed }
       localStorage.setItem(USERS_KEY, JSON.stringify(users))
     }
 
-    const updated = { ...user, ...updates }
-    delete updated.password
+    const updated = toSafeUser({ ...user, ...allowed })
     localStorage.setItem(USER_KEY, JSON.stringify(updated))
     setUser(updated)
   }
+
+  const changePassword = async (currentPassword, newPassword) => {
+    if (!user) throw new Error('Chưa đăng nhập')
+    await authService.changePassword({
+      userId: user.id,
+      currentPassword,
+      newPassword,
+    })
+  }
+
+  const isAdmin = authService.isAdmin(user)
 
   return (
     <AuthContext.Provider
@@ -121,10 +163,12 @@ export function AuthProvider({ children }) {
         user,
         loading,
         isAuthenticated: !!user,
+        isAdmin,
         login,
         register,
         logout,
         updateProfile,
+        changePassword,
       }}
     >
       {children}

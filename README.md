@@ -36,6 +36,27 @@ Hiện tại dùng **mock data / localStorage** nên chạy được ngay mà kh
 - Password: `123456`
 - Role: `admin`
 
+Sau khi đăng nhập admin, mở `/admin` hoặc bấm nút **Admin** trên Header.
+
+## Admin Panel
+
+Routes:
+
+- `/admin` — Dashboard
+- `/admin/products` — Quản lý sản phẩm
+- `/admin/products/add` — Thêm sản phẩm
+- `/admin/products/edit/:id` — Sửa sản phẩm
+- `/admin/orders` — Đơn hàng
+- `/admin/orders/:id` — Chi tiết đơn
+- `/admin/users` — Người dùng
+- `/admin/categories` — Danh mục
+- `/admin/reports` — Báo cáo + Export CSV
+- `/admin/settings` — Cài đặt
+
+Quyền truy cập kiểm tra qua `authService.isAdmin(user)` (role từ session auth).
+
+Khi có backend thật: đặt `VITE_USE_REMOTE_API=true` trong `.env`.
+
 ## Cấu trúc project
 
 ```text

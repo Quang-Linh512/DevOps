@@ -2,7 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 
 function Profile() {
-  const { user, logout } = useAuth()
+  const { user, isAdmin, logout } = useAuth()
   const navigate = useNavigate()
 
   const handleLogout = () => {
@@ -38,10 +38,15 @@ function Profile() {
           </dl>
 
           <div className="profile-actions">
+            {isAdmin && (
+              <Link to="/admin" className="btn btn-primary">
+                Vào trang Admin
+              </Link>
+            )}
             <Link to="/orders" className="btn btn-outline">
               Xem đơn hàng
             </Link>
-            <button type="button" className="btn btn-primary" onClick={handleLogout}>
+            <button type="button" className="btn btn-outline" onClick={handleLogout}>
               Đăng xuất
             </button>
           </div>

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { useCart } from '../context/CartContext'
 
 function Header() {
-  const { user, isAuthenticated, logout } = useAuth()
+  const { user, isAuthenticated, isAdmin, logout } = useAuth()
   const { cartCount } = useCart()
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
@@ -76,6 +76,11 @@ function Header() {
 
           {isAuthenticated ? (
             <div className="user-menu">
+              {isAdmin && (
+                <Link to="/admin" className="btn btn-outline btn-sm" onClick={() => setMenuOpen(false)}>
+                  Admin
+                </Link>
+              )}
               <Link to="/profile" onClick={() => setMenuOpen(false)}>
                 {user.name}
               </Link>

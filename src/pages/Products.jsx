@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import ProductList from '../components/ProductList'
 import Loading from '../components/Loading'
-import { categories } from '../data/products'
 import { getProducts } from '../services/api'
+import { categoryService } from '../services/categoryService'
 
 const PAGE_SIZE = 8
 
 function Products() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [products, setProducts] = useState([])
+  const [categories, setCategories] = useState([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
 
@@ -20,9 +21,11 @@ function Products() {
   useEffect(() => {
     let active = true
     setLoading(true)
-    getProducts()
-      .then((data) => {
-        if (active) setProducts(data)
+    Promise.all([getProducts(), categoryService.getAll()])
+      .then(([data, cats]) => {
+        if (!active) return
+        setProducts(data)
+        setCategories(cats.filter((c) => c.status !== 'inactive'))
       })
       .finally(() => {
         if (active) setLoading(false)

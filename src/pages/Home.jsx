@@ -1,12 +1,34 @@
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Banner from '../components/Banner'
 import CategoryCard from '../components/CategoryCard'
 import ProductList from '../components/ProductList'
-import { categories, products } from '../data/products'
+import Loading from '../components/Loading'
+import { getProducts } from '../services/api'
+import { categoryService } from '../services/categoryService'
 
 function Home() {
-  const featured = products.filter((p) => p.isFeatured).slice(0, 8)
-  const newest = products.filter((p) => p.isNew).slice(0, 8)
+  const [featured, setFeatured] = useState([])
+  const [newest, setNewest] = useState([])
+  const [categories, setCategories] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    Promise.all([getProducts(), categoryService.getAll()])
+      .then(([products, cats]) => {
+        if (!active) return
+        setFeatured(products.filter((p) => p.isFeatured).slice(0, 8))
+        setNewest(products.filter((p) => p.isNew).slice(0, 8))
+        setCategories(cats.filter((c) => c.status !== 'inactive'))
+      })
+      .finally(() => active && setLoading(false))
+    return () => {
+      active = false
+    }
+  }, [])
+
+  if (loading) return <Loading />
 
   return (
     <div className="home-page">
