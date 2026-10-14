@@ -1,4 +1,4 @@
-name: Build and Push Docker Image
+name: Build and Deploy
 
 on:
   push:
@@ -7,14 +7,43 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: qlinh48/devops-shop
+  FRONTEND_IMAGE: qlinh48/devops-shop-frontend
+  BACKEND_IMAGE: qlinh48/devops-shop-backend
 
 jobs:
-  docker:
+  # ============================================
+  # Job 1: Lint và Test Frontend
+  # ============================================
+  frontend-test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout source code
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run tests
+        run: npm run test
+
+  # ============================================
+  # Job 2: Build và Push Frontend Image
+  # ============================================
+  build-frontend:
+    runs-on: ubuntu-latest
+    needs: frontend-test
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -26,12 +55,231 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and Push Docker Image
+      - name: Build and Push Frontend
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.FRONTEND_IMAGE }}:latest
+            ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          build-args: |
+            VITE_API_URL=/api
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # Job 3: Build và Push Backend Image
+  # ============================================
+  build-backend:
+    runs-on: ubuntu-latest
+    needs: frontend-test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Build and Push Backend
+        uses: docker/build-push-action@v7
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: |
+            ${{ env.BACKEND_IMAGE }}:latest
+            ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================
+  # Job 4: Deploy to AWS EC2
+  # ============================================
+  deploy:
+    runs-on: ubuntu-latest
+    needs: [build-frontend, build-backend]
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          envs: JWT_SECRET,CORS_ORIGIN
+          script: |
+            set -e
+
+            # Docker images
+            FRONTEND_IMAGE="qlinh48/devops-shop-frontend"
+            BACKEND_IMAGE="qlinh48/devops-shop-backend"
+
+            # Validate required secrets
+            if [ -z "$JWT_SECRET" ]; then
+              echo "ERROR: JWT_SECRET is not set"
+              exit 1
+            fi
+
+            if [ -z "$CORS_ORIGIN" ]; then
+              echo "ERROR: CORS_ORIGIN is not set"
+              exit 1
+            fi
+
+            umask 0077
+            mkdir -p /opt/devops-shop
+            cd /opt/devops-shop
+
+            # Create .env file with secrets (using printf to handle special chars)
+            printf 'JWT_SECRET=%s\n' "$JWT_SECRET" > .env
+            printf 'CORS_ORIGIN=%s\n' "$CORS_ORIGIN" >> .env
+            printf 'SEED_ON_START=false\n' >> .env
+            chmod 600 .env
+
+            # Verify .env was created correctly (without exposing secrets)
+            if [ ! -f .env ] || [ ! -s .env ]; then
+              echo "ERROR: Failed to create .env file"
+              exit 1
+            fi
+
+            # Pull latest images
+            echo "Pulling latest images..."
+            docker pull ${FRONTEND_IMAGE}:latest
+            docker pull ${BACKEND_IMAGE}:latest
+
+            # Create docker-compose.prod.yml
+            cat > docker-compose.prod.yml << 'COMPOSEEOF'
+            services:
+              frontend:
+                image: ${FRONTEND_IMAGE}:latest
+                container_name: devshop-frontend
+                ports:
+                  - "8080:80"
+                restart: unless-stopped
+                networks:
+                  - devshop-network
+                depends_on:
+                  backend:
+                    condition: service_healthy
+
+              backend:
+                image: ${BACKEND_IMAGE}:latest
+                container_name: devshop-backend
+                env_file:
+                  - .env
+                environment:
+                  - NODE_ENV=production
+                  - PORT=5000
+                  - MONGODB_URI=mongodb://mongo:27017/devops-shop
+                restart: unless-stopped
+                networks:
+                  - devshop-network
+                depends_on:
+                  mongo:
+                    condition: service_healthy
+                healthcheck:
+                  test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+                  interval: 30s
+                  timeout: 10s
+                  retries: 3
+                  start_period: 40s
+
+              mongo:
+                image: mongo:7
+                container_name: devshop-mongo
+                volumes:
+                  - mongo_data:/data/db
+                restart: unless-stopped
+                networks:
+                  - devshop-network
+                healthcheck:
+                  test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+                  interval: 10s
+                  timeout: 5s
+                  retries: 5
+                  start_period: 30s
+
+            networks:
+              devshop-network:
+                driver: bridge
+
+            volumes:
+              mongo_data:
+                driver: local
+            COMPOSEEOF
+
+            # Update services (keep volumes, only recreate changed containers)
+            echo "Updating services..."
+            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+            # Wait for MongoDB to be healthy
+            echo "Waiting for MongoDB..."
+            for i in $(seq 1 30); do
+              if docker exec devshop-mongo mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
+                echo "MongoDB is ready"
+                break
+              fi
+              if [ $i -eq 30 ]; then
+                echo "ERROR: MongoDB failed to start within 30 seconds"
+                docker compose -f docker-compose.prod.yml ps
+                exit 1
+              fi
+              sleep 1
+            done
+
+            # Wait for backend to be healthy
+            echo "Waiting for Backend..."
+            BACKEND_HEALTHY=false
+            for i in $(seq 1 20); do
+              RESPONSE=$(docker exec devshop-backend wget -qO- http://localhost:5000/health 2>/dev/null || echo "")
+              if echo "$RESPONSE" | grep -q '"status":"ok"'; then
+                echo "Backend is healthy"
+                BACKEND_HEALTHY=true
+                break
+              fi
+              if [ $i -eq 20 ]; then
+                echo "ERROR: Backend failed to become healthy within 60 seconds"
+                docker compose -f docker-compose.prod.yml ps
+                docker logs devshop-backend --tail 50
+                exit 1
+              fi
+              sleep 3
+            done
+
+            if [ "$BACKEND_HEALTHY" = false ]; then
+              echo "ERROR: Backend health check failed"
+              exit 1
+            fi
+
+            # Verify frontend is running
+            echo "Checking Frontend..."
+            if ! docker compose -f docker-compose.prod.yml ps | grep -q "devshop-frontend"; then
+              echo "ERROR: Frontend container not found"
+              docker compose -f docker-compose.prod.yml ps
+              exit 1
+            fi
+
+            # Test API endpoint through Nginx proxy
+            echo "Testing API endpoint..."
+            API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/products || echo "000")
+            if [ "$API_RESPONSE" != "200" ]; then
+              echo "ERROR: API endpoint returned $API_RESPONSE (expected 200)"
+              curl -s http://localhost:8080/api/products | head -c 200
+              exit 1
+            fi
+            echo "API endpoint test passed (HTTP $API_RESPONSE)"
+
+            # Final status
+            echo "Deployment completed successfully"
+            echo "Container Status:"
+            docker compose -f docker-compose.prod.yml ps

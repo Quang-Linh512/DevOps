@@ -38,24 +38,37 @@ function saveProducts(list) {
 
 /**
  * Product service.
- * Hiện lưu localStorage (đồng bộ với cửa hàng).
- * Khi backend có API: bật VITE_USE_REMOTE_API=true và dùng các nhánh api.*.
+ * Khi USE_REMOTE=true: gọi API backend thật
+ * Khi USE_REMOTE=false: dùng localStorage (mock)
  */
 export const productService = {
   async getAll() {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get('/admin/products')
-      return data
+      try {
+        const response = await api.get('/products')
+        return Array.isArray(response.data) ? response.data : []
+      } catch (error) {
+        console.error('Failed to fetch products from API:', error)
+        // Fallback to localStorage
+        return ensureProducts()
+      }
     }
     return ensureProducts()
   },
 
   async getById(id) {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get(`/admin/products/${id}`)
-      return data
+      try {
+        const response = await api.get(`/products/${id}`)
+        return response.data
+      } catch (error) {
+        console.error('Failed to fetch product:', error)
+        const product = ensureProducts().find((p) => String(p.id) === String(id))
+        if (!product) throw new Error('Không tìm thấy sản phẩm')
+        return product
+      }
     }
     const product = ensureProducts().find((p) => String(p.id) === String(id))
     if (!product) throw new Error('Không tìm thấy sản phẩm')
@@ -65,8 +78,12 @@ export const productService = {
   async create(payload) {
     await delay()
     if (USE_REMOTE) {
-      const { data } = await api.post('/admin/products', payload)
-      return data
+      try {
+        const response = await api.post('/products', payload)
+        return response.data.product || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể tạo sản phẩm')
+      }
     }
     const list = ensureProducts()
     const id = Date.now()
@@ -100,8 +117,12 @@ export const productService = {
   async update(id, payload) {
     await delay()
     if (USE_REMOTE) {
-      const { data } = await api.put(`/admin/products/${id}`, payload)
-      return data
+      try {
+        const response = await api.put(`/products/${id}`, payload)
+        return response.data.product || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể cập nhật sản phẩm')
+      }
     }
     const list = ensureProducts()
     const idx = list.findIndex((p) => String(p.id) === String(id))
@@ -126,11 +147,14 @@ export const productService = {
   async remove(id) {
     await delay()
     if (USE_REMOTE) {
-      await api.delete(`/admin/products/${id}`)
-      return true
+      try {
+        await api.delete(`/products/${id}`)
+        return true
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể xóa sản phẩm')
+      }
     }
-    const list = ensureProducts().filter((p) => String(p.id) !== String(id))
-    saveProducts(list)
+    saveProducts(ensureProducts().filter((p) => String(p.id) !== String(id)))
     return true
   },
 }

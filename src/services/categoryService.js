@@ -34,10 +34,15 @@ function save(list) {
 
 export const categoryService = {
   async getAll() {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get('/admin/categories')
-      return data
+      try {
+        const response = await api.get('/categories')
+        return Array.isArray(response.data) ? response.data : response.data.categories || []
+      } catch (error) {
+        console.error('Failed to fetch categories:', error)
+        return ensureCategories()
+      }
     }
     return ensureCategories()
   },
@@ -45,8 +50,12 @@ export const categoryService = {
   async create(payload) {
     await delay()
     if (USE_REMOTE) {
-      const { data } = await api.post('/admin/categories', payload)
-      return data
+      try {
+        const response = await api.post('/categories', payload)
+        return response.data.category || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể tạo danh mục')
+      }
     }
     const list = ensureCategories()
     const item = normalizeCategory({
@@ -66,8 +75,12 @@ export const categoryService = {
   async update(id, payload) {
     await delay()
     if (USE_REMOTE) {
-      const { data } = await api.put(`/admin/categories/${id}`, payload)
-      return data
+      try {
+        const response = await api.put(`/categories/${id}`, payload)
+        return response.data.category || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể cập nhật danh mục')
+      }
     }
     const list = ensureCategories()
     const idx = list.findIndex((c) => String(c.id) === String(id))
@@ -80,8 +93,12 @@ export const categoryService = {
   async remove(id) {
     await delay()
     if (USE_REMOTE) {
-      await api.delete(`/admin/categories/${id}`)
-      return true
+      try {
+        await api.delete(`/categories/${id}`)
+        return true
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể xóa danh mục')
+      }
     }
     save(ensureCategories().filter((c) => String(c.id) !== String(id)))
     return true

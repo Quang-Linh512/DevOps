@@ -23,30 +23,70 @@ function saveOrders(list) {
 
 export const orderService = {
   async getAll() {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get('/admin/orders')
-      return data
+      try {
+        const response = await api.get('/orders')
+        return response.data || []
+      } catch (error) {
+        console.error('Failed to fetch orders:', error)
+        return getOrders()
+      }
     }
     return getOrders()
   },
 
   async getById(id) {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get(`/admin/orders/${id}`)
-      return data
+      try {
+        const response = await api.get(`/orders/${id}`)
+        return response.data
+      } catch (error) {
+        console.error('Failed to fetch order:', error)
+        const order = getOrders().find((o) => String(o.id) === String(id))
+        if (!order) throw new Error('Không tìm thấy đơn hàng')
+        return order
+      }
     }
     const order = getOrders().find((o) => String(o.id) === String(id))
     if (!order) throw new Error('Không tìm thấy đơn hàng')
     return order
   },
 
+  async create(orderData) {
+    await delay()
+    if (USE_REMOTE) {
+      try {
+        const response = await api.post('/orders', orderData)
+        return response.data.order || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể tạo đơn hàng')
+      }
+    }
+    // LocalStorage fallback
+    const orders = getOrders()
+    const order = {
+      id: `DH${Date.now()}`,
+      createdAt: new Date().toISOString(),
+      ...orderData,
+      status: 'Chờ xác nhận',
+      statusHistory: [{ status: 'Chờ xác nhận', at: new Date().toISOString() }],
+    }
+    orders.unshift(order)
+    saveOrders(orders)
+    return order
+  },
+
   async updateStatus(id, status) {
     await delay()
     if (USE_REMOTE) {
-      const { data } = await api.patch(`/admin/orders/${id}/status`, { status })
-      return data
+      try {
+        const response = await api.patch(`/orders/${id}/status`, { status })
+        return response.data.order || response.data
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể cập nhật trạng thái')
+      }
     }
     if (!ORDER_STATUSES.includes(status)) {
       throw new Error('Trạng thái không hợp lệ')

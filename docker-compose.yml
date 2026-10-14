@@ -1,8 +1,64 @@
+# Production Docker Compose
+# DevOps Shop - React + Node.js + MongoDB
+
 services:
-  web:
-    build: .
-    image: devops-shop:latest
-    container_name: devops-shop
+  # Frontend - React App với Nginx
+  frontend:
+    image: qlinh48/devops-shop-frontend:latest
+    container_name: devshop-frontend
     ports:
       - "8080:80"
     restart: unless-stopped
+    networks:
+      - devshop-network
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # Backend - Node.js + Express + MongoDB
+  backend:
+    image: qlinh48/devops-shop-backend:latest
+    container_name: devshop-backend
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - MONGODB_URI=mongodb://mongo:27017/devops-shop
+      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET required}
+      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8080}
+      - SEED_ON_START=${SEED_ON_START:-false}
+    restart: unless-stopped
+    networks:
+      - devshop-network
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Database - MongoDB
+  mongo:
+    image: mongo:7
+    container_name: devshop-mongo
+    volumes:
+      - mongo_data:/data/db
+    restart: unless-stopped
+    networks:
+      - devshop-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+networks:
+  devshop-network:
+    driver: bridge
+
+volumes:
+  mongo_data:
+    driver: local

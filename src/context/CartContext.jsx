@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useState } from 'react'
+import { useAuth } from './AuthContext'
 
 const CartContext = createContext(null)
 
 const CART_KEY = 'devshop_cart'
-const ORDERS_KEY = 'devshop_orders'
 const SHIPPING_FEE = 30000
 const FREE_SHIPPING_THRESHOLD = 500000
 
@@ -19,6 +19,7 @@ function loadCart() {
 export function CartProvider({ children }) {
   const [cartItems, setCartItems] = useState([])
   const [toast, setToast] = useState(null)
+  const { user } = useAuth()
 
   useEffect(() => {
     setCartItems(loadCart())
@@ -94,42 +95,85 @@ export function CartProvider({ children }) {
 
   const total = subtotal + shipping
 
-  /** Tạo đơn hàng và lưu localStorage */
-  const placeOrder = (orderInfo) => {
-    const order = {
-      id: `DH${Date.now()}`,
-      createdAt: new Date().toISOString(),
-      items: [...cartItems],
-      subtotal,
-      shipping,
-      total,
-      status: 'Chờ xác nhận',
-      paymentMethod: orderInfo.paymentMethod,
-      customer: {
-        name: orderInfo.name,
-        phone: orderInfo.phone,
-        address: orderInfo.address,
-        note: orderInfo.note || '',
-      },
-      userId: orderInfo.userId,
-    }
+  /** Tạo đơn hàng */
+  const placeOrder = async (orderInfo) => {
+    // Import orderService dynamically to avoid circular dependency
+    const { orderService } = await import('../services/orderService')
 
-    const raw = localStorage.getItem(ORDERS_KEY)
-    const orders = raw ? JSON.parse(raw) : []
-    orders.unshift(order)
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(orders))
-    clearCart()
-    showToast('Đặt hàng thành công!')
-    return order
+    // Transform cart items to order format
+    const items = cartItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      price: item.price,
+      image: item.image,
+      quantity: item.quantity,
+    }))
+
+    try {
+      const order = await orderService.create({
+        ho_ten: orderInfo.name,
+        so_dien_thoai: orderInfo.phone,
+        dia_chi: orderInfo.address,
+        ghi_chu: orderInfo.note || '',
+        phuong_thuc_thanh_toan: orderInfo.paymentMethod,
+        phi_ship: shipping,
+        giam_gia: 0,
+        items,
+      })
+
+      clearCart()
+      showToast('Đặt hàng thành công!')
+      return order
+    } catch {
+      // Fallback: vẫn tạo order local nếu API lỗi
+      const localOrder = {
+        id: `DH${Date.now()}`,
+        createdAt: new Date().toISOString(),
+        items: [...cartItems],
+        subtotal,
+        shipping,
+        total,
+        status: 'Chờ xác nhận',
+        paymentMethod: orderInfo.paymentMethod,
+        customer: {
+          name: orderInfo.name,
+          phone: orderInfo.phone,
+          address: orderInfo.address,
+          note: orderInfo.note || '',
+        },
+        userId: user?.id,
+      }
+
+      // Save to localStorage
+      const raw = localStorage.getItem('devshop_orders')
+      const orders = raw ? JSON.parse(raw) : []
+      orders.unshift(localOrder)
+      localStorage.setItem('devshop_orders', JSON.stringify(orders))
+
+      clearCart()
+      showToast('Đặt hàng thành công! (Lưu offline)')
+      return localOrder
+    }
   }
 
-  const getOrdersByUser = (userId) => {
+  const getOrdersByUser = async (userId) => {
+    const { orderService } = await import('../services/orderService')
+
     try {
-      const raw = localStorage.getItem(ORDERS_KEY)
-      const orders = raw ? JSON.parse(raw) : []
-      return orders.filter((o) => o.userId === userId)
-    } catch {
+      const orders = await orderService.getAll()
+      if (Array.isArray(orders)) {
+        return orders.filter((o) => o.userId === userId || o.customer?.name)
+      }
       return []
+    } catch {
+      // Fallback to localStorage
+      try {
+        const raw = localStorage.getItem('devshop_orders')
+        const orders = raw ? JSON.parse(raw) : []
+        return orders
+      } catch {
+        return []
+      }
     }
   }
 

@@ -41,74 +41,30 @@ function getRangeDates(filter) {
 
 export const reportService = {
   async getReport(filter = '30days') {
-    await delay()
+    await delay(100)
     if (USE_REMOTE) {
-      const { data } = await api.get(`/admin/reports?filter=${filter}`)
-      return data
+      try {
+        const response = await api.get(`/reports?filter=${filter}`)
+        return response.data
+      } catch (error) {
+        console.error('Failed to fetch report:', error)
+        return getFallbackReport()
+      }
     }
-
-    const { from, to } = getRangeDates(filter)
-    const [orders, products, users] = await Promise.all([
-      orderService.getAll(),
-      productService.getAll(),
-      userService.getAll(),
-    ])
-
-    const ranged = orders.filter((o) => {
-      const t = new Date(o.createdAt).getTime()
-      return t >= from.getTime() && t <= to.getTime()
-    })
-    const valid = ranged.filter((o) => o.status !== 'Đã hủy')
-
-    const revenue = valid.reduce((s, o) => s + o.total, 0)
-    const soldMap = {}
-    valid.forEach((o) => {
-      ;(o.items || []).forEach((item) => {
-        if (!soldMap[item.id]) {
-          soldMap[item.id] = { id: item.id, name: item.name, sold: 0, revenue: 0 }
-        }
-        soldMap[item.id].sold += item.quantity
-        soldMap[item.id].revenue += item.price * item.quantity
-      })
-    })
-
-    const seriesMap = {}
-    valid.forEach((o) => {
-      const key = new Date(o.createdAt).toLocaleDateString('vi-VN')
-      if (!seriesMap[key]) seriesMap[key] = { label: key, revenue: 0, orders: 0 }
-      seriesMap[key].revenue += o.total
-      seriesMap[key].orders += 1
-    })
-
-    return {
-      summary: {
-        revenue,
-        orders: ranged.length,
-        products: products.length,
-        customers: users.filter((u) => u.role !== 'admin').length,
-        completed: ranged.filter((o) => o.status === 'Đã giao').length,
-        cancelled: ranged.filter((o) => o.status === 'Đã hủy').length,
-      },
-      series: Object.values(seriesMap),
-      topProducts: Object.values(soldMap)
-        .sort((a, b) => b.sold - a.sold)
-        .slice(0, 10),
-      orders: ranged
-        .slice()
-        .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-    }
+    return getFallbackReport()
   },
 
-  /**
-   * Export CSV phía client.
-   * Khi backend có /admin/reports/export thì chuyển sang tải file từ API.
-   */
   async exportCSV(filter = '30days') {
     if (USE_REMOTE) {
-      const { data } = await api.get(`/admin/reports/export?filter=${filter}`, {
-        responseType: 'blob',
-      })
-      return data
+      try {
+        const response = await api.get(`/reports/export?filter=${filter}`, {
+          responseType: 'blob',
+        })
+        return response.data
+      } catch (error) {
+        console.error('Failed to export CSV:', error)
+        throw error
+      }
     }
 
     const report = await this.getReport(filter)
@@ -139,6 +95,22 @@ export const reportService = {
   },
 
   formatMoney: formatPrice,
+}
+
+function getFallbackReport() {
+  return {
+    summary: {
+      revenue: 0,
+      orders: 0,
+      products: 0,
+      customers: 0,
+      completed: 0,
+      cancelled: 0,
+    },
+    series: [],
+    topProducts: [],
+    orders: [],
+  }
 }
 
 export default reportService
