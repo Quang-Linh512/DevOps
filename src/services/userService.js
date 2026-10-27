@@ -24,11 +24,12 @@ export const userService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/users')
+        // Backend mount danh sách user tại /api/admin/users (routes/users.js)
+        const response = await api.get('/admin/users')
         return Array.isArray(response.data) ? response.data : response.data.users || []
       } catch (error) {
         console.error('Failed to fetch users:', error)
-        return getUsersRaw().map(sanitize)
+        throw new Error(error.response?.data?.message || 'Không thể tải danh sách người dùng')
       }
     }
     return getUsersRaw().map(sanitize)
@@ -38,13 +39,11 @@ export const userService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/users/${id}`)
+        const response = await api.get(`/admin/users/${id}`)
         return response.data.user || response.data
       } catch (error) {
         console.error('Failed to fetch user:', error)
-        const user = getUsersRaw().find((u) => String(u.id) === String(id))
-        if (!user) throw new Error('Không tìm thấy người dùng')
-        return sanitize(user)
+        throw new Error(error.response?.data?.message || 'Không tìm thấy người dùng')
       }
     }
     const user = getUsersRaw().find((u) => String(u.id) === String(id))
@@ -56,7 +55,7 @@ export const userService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        const response = await api.patch(`/users/${id}/status`, { status })
+        const response = await api.patch(`/admin/users/${id}/status`, { status })
         return response.data.user || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể cập nhật người dùng')

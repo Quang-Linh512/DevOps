@@ -8,3 +8,11 @@ dist
 coverage
 npm-debug.log*
 .dockerignore
+
+# File .env cục bộ KHÔNG được đưa vào build context.
+# Build production chỉ nhận cấu hình qua build-args (VITE_API_URL, VITE_USE_REMOTE_API)
+# để bundle không bị ảnh hưởng bởi biến môi trường của máy dev
+# (ví dụ .env đang trỏ VITE_API_URL=http://localhost:5000/api).
+.env
+.env.*
+!.env.example

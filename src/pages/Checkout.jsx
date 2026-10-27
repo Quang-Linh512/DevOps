@@ -17,6 +17,7 @@ function Checkout() {
     paymentMethod: 'COD',
   })
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   if (cartItems.length === 0) {
     return (
@@ -35,7 +36,7 @@ function Checkout() {
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
@@ -44,15 +45,26 @@ function Checkout() {
       return
     }
 
-    placeOrder({
-      ...form,
-      name: form.name.trim(),
-      phone: form.phone.trim(),
-      address: form.address.trim(),
-      userId: user.id,
-    })
+    // Chặn submit kép trong lúc đang gửi
+    if (submitting) return
+    setSubmitting(true)
 
-    navigate('/orders')
+    try {
+      // placeOrder là async -> phải await để bắt lỗi API và không chuyển trang
+      // trước khi đơn hàng được tạo.
+      await placeOrder({
+        ...form,
+        name: form.name.trim(),
+        phone: form.phone.trim(),
+        address: form.address.trim(),
+        userId: user.id,
+      })
+      navigate('/orders')
+    } catch (err) {
+      setError(err?.message || 'Không thể đặt hàng. Vui lòng thử lại.')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -106,8 +118,8 @@ function Checkout() {
               </label>
             </div>
 
-            <button type="submit" className="btn btn-primary btn-block">
-              Đặt hàng
+            <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+              {submitting ? 'Đang đặt hàng...' : 'Đặt hàng'}
             </button>
           </form>
 

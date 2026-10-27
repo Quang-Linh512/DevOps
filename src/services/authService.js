@@ -15,21 +15,32 @@ export const authService = {
     return role === 'admin'
   },
 
+  /**
+   * Đăng nhập.
+   * Luôn trả về cùng một hình dạng:
+   *   { success: boolean, user: object|null, token: string|null, message?: string }
+   * Nhánh remote đọc response.data (token nằm trong user theo toUserResponse),
+   * nhánh fallback localStorage không có token nên token = null.
+   */
   async login(email, password) {
     if (USE_REMOTE) {
       try {
         const response = await api.post('/auth/login', { email, password })
-        if (response.data.success && response.data.token) {
+        if (response.data.success && response.data.user) {
           const user = response.data.user
-          const token = response.data.token
-          // Lưu vào localStorage
-          localStorage.setItem('devshop_user', JSON.stringify({ ...user, token }))
-          return { success: true, user, token }
+          // Backend nhúng token vào user (toUserResponse), hỗ trợ cả 2 vị trí.
+          const token = response.data.token || user.token || null
+          return { success: true, user: { ...user, token }, token, message: response.data.message }
         }
-        return { success: false, message: response.data.message || 'Đăng nhập thất bại' }
+        return {
+          success: false,
+          user: null,
+          token: null,
+          message: response.data.message || 'Đăng nhập thất bại',
+        }
       } catch (error) {
         const message = error.response?.data?.message || 'Đăng nhập thất bại'
-        return { success: false, message }
+        return { success: false, user: null, token: null, message }
       }
     }
     // Fallback localStorage
@@ -38,24 +49,27 @@ export const authService = {
       (u) => u.email.toLowerCase() === email.toLowerCase() && u.password === password
     )
     if (!found) {
-      return { success: false, message: 'Email hoặc mật khẩu không đúng' }
+      return { success: false, user: null, token: null, message: 'Email hoặc mật khẩu không đúng' }
     }
     if (found.status === 'blocked') {
-      return { success: false, message: 'Tài khoản đã bị khóa' }
+      return { success: false, user: null, token: null, message: 'Tài khoản đã bị khóa' }
     }
     const { password: _, ...safeUser } = found
-    localStorage.setItem('devshop_user', JSON.stringify(safeUser))
-    return { success: true, user: safeUser }
+    return { success: true, user: safeUser, token: null }
   },
 
+  /**
+   * Đăng ký.
+   * Luôn trả về: { success: boolean, message: string }
+   */
   async register(formData) {
     if (USE_REMOTE) {
       try {
         const response = await api.post('/auth/register', {
           email: formData.email,
           password: formData.password,
-          ho_ten: formData.name,
-          so_dien_thoai: formData.phone,
+          name: formData.name,
+          phone: formData.phone,
         })
         if (response.data.success) {
           return { success: true, message: response.data.message || 'Đăng ký thành công!' }
@@ -91,6 +105,22 @@ export const authService = {
     return { success: true, message: 'Đăng ký thành công! Vui lòng đăng nhập.' }
   },
 
+  /**
+   * Cập nhật hồ sơ người dùng.
+   * API thật: PUT /auth/profile (backend chỉ cho phép name, phone, address, avatar).
+   */
+  async updateProfile(updates) {
+    if (USE_REMOTE) {
+      try {
+        const response = await api.put('/auth/profile', updates)
+        return { success: true, user: response.data }
+      } catch (error) {
+        throw new Error(error.response?.data?.message || 'Không thể cập nhật hồ sơ')
+      }
+    }
+    return { success: true, user: { ...updates } }
+  },
+
   async changePassword({ userId, currentPassword, newPassword }) {
     if (USE_REMOTE) {
       try {
@@ -121,8 +151,9 @@ export const authService = {
   async getStoreSettings() {
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/settings')
-        return response.data.settings || {}
+        // Backend mount cài đặt tại /api/admin/settings (routes/admin.js)
+        const response = await api.get('/admin/settings')
+        return response.data.settings || response.data
       } catch (error) {
         console.error('Failed to fetch settings:', error)
         return getDefaultSettings()
@@ -134,8 +165,8 @@ export const authService = {
   async saveStoreSettings(settings) {
     if (USE_REMOTE) {
       try {
-        const response = await api.put('/settings', settings)
-        return response.data.settings
+        const response = await api.put('/admin/settings', settings)
+        return response.data.settings || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể lưu cài đặt')
       }

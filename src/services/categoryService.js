@@ -37,11 +37,13 @@ export const categoryService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/categories')
+        // Backend mount danh mục tại /api/admin/categories (routes/categories.js).
+        // GET / trong router này không yêu cầu token nên storefront vẫn đọc được.
+        const response = await api.get('/admin/categories')
         return Array.isArray(response.data) ? response.data : response.data.categories || []
       } catch (error) {
         console.error('Failed to fetch categories:', error)
-        return ensureCategories()
+        throw new Error(error.response?.data?.message || 'Không thể tải danh mục')
       }
     }
     return ensureCategories()
@@ -51,7 +53,7 @@ export const categoryService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        const response = await api.post('/categories', payload)
+        const response = await api.post('/admin/categories', payload)
         return response.data.category || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể tạo danh mục')
@@ -76,7 +78,7 @@ export const categoryService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        const response = await api.put(`/categories/${id}`, payload)
+        const response = await api.put(`/admin/categories/${id}`, payload)
         return response.data.category || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể cập nhật danh mục')
@@ -94,7 +96,7 @@ export const categoryService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        await api.delete(`/categories/${id}`)
+        await api.delete(`/admin/categories/${id}`)
         return true
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể xóa danh mục')

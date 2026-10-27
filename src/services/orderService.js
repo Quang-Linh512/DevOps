@@ -26,11 +26,27 @@ export const orderService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
+        // GET /api/orders yêu cầu quyền admin -> dùng cho trang quản trị đơn hàng
         const response = await api.get('/orders')
         return response.data || []
       } catch (error) {
         console.error('Failed to fetch orders:', error)
-        return getOrders()
+        throw new Error(error.response?.data?.message || 'Không thể tải đơn hàng')
+      }
+    }
+    return getOrders()
+  },
+
+  async getMine() {
+    await delay(100)
+    if (USE_REMOTE) {
+      try {
+        // GET /api/orders/me trả về đơn hàng của chính người đang đăng nhập
+        const response = await api.get('/orders/me')
+        return response.data || []
+      } catch (error) {
+        console.error('Failed to fetch my orders:', error)
+        throw new Error(error.response?.data?.message || 'Không thể tải đơn hàng của bạn')
       }
     }
     return getOrders()
@@ -44,9 +60,7 @@ export const orderService = {
         return response.data
       } catch (error) {
         console.error('Failed to fetch order:', error)
-        const order = getOrders().find((o) => String(o.id) === String(id))
-        if (!order) throw new Error('Không tìm thấy đơn hàng')
-        return order
+        throw new Error(error.response?.data?.message || 'Không tìm thấy đơn hàng')
       }
     }
     const order = getOrders().find((o) => String(o.id) === String(id))
@@ -58,7 +72,15 @@ export const orderService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        const response = await api.post('/orders', orderData)
+        // Backend (routes/orders.js) đọc: name, phone, address, note, paymentMethod, items
+        const response = await api.post('/orders', {
+          name: orderData.name,
+          phone: orderData.phone,
+          address: orderData.address,
+          note: orderData.note || '',
+          paymentMethod: orderData.paymentMethod || 'COD',
+          items: orderData.items,
+        })
         return response.data.order || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể tạo đơn hàng')

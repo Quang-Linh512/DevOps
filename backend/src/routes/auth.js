@@ -10,14 +10,14 @@ router.post('/register', async (req, res) => {
   try {
     const { name, email, phone, password } = req.body
     if (!name?.trim() || !email?.trim() || !password) {
-      return res.status(400).json({ message: 'Thiếu thông tin đăng ký' })
+      return res.status(400).json({ success: false, message: 'Thiếu thông tin đăng ký' })
     }
     if (password.length < 6) {
-      return res.status(400).json({ message: 'Mật khẩu tối thiểu 6 ký tự' })
+      return res.status(400).json({ success: false, message: 'Mật khẩu tối thiểu 6 ký tự' })
     }
     const exists = await User.findOne({ email: email.toLowerCase().trim() })
     if (exists) {
-      return res.status(409).json({ message: 'Email đã được sử dụng' })
+      return res.status(409).json({ success: false, message: 'Email đã được sử dụng' })
     }
     const hashed = await bcrypt.hash(password, 10)
     await User.create({

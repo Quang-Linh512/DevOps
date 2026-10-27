@@ -6,32 +6,6 @@ import api from './http'
 
 const USE_REMOTE = import.meta.env.VITE_USE_REMOTE_API === 'true'
 
-function startOfDay(d) {
-  const x = new Date(d)
-  x.setHours(0, 0, 0, 0)
-  return x
-}
-
-function inRange(dateStr, from, to) {
-  const t = new Date(dateStr).getTime()
-  return t >= from.getTime() && t <= to.getTime()
-}
-
-function percentChange(current, previous) {
-  if (previous === 0) return current > 0 ? 100 : 0
-  return Number((((current - previous) / previous) * 100).toFixed(1))
-}
-
-function filterOrders(orders, from, to) {
-  return orders.filter(
-    (o) => o.status !== 'Đã hủy' && inRange(o.createdAt, from, to)
-  )
-}
-
-function revenueOf(orders) {
-  return orders.reduce((sum, o) => sum + (o.total || 0), 0)
-}
-
 /**
  * Dashboard stats tính từ dữ liệu đơn hàng / sản phẩm / user hiện có.
  */
@@ -40,7 +14,8 @@ export const dashboardService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/admin/stats')
+        // Backend mount dashboard tại /api/admin/dashboard/* (routes/admin.js)
+        const response = await api.get('/admin/dashboard/stats')
         return response.data
       } catch (error) {
         console.error('Failed to fetch stats:', error)
@@ -54,7 +29,7 @@ export const dashboardService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/admin/revenue?range=${range}`)
+        const response = await api.get(`/admin/dashboard/revenue?range=${range}`)
         return response.data
       } catch (error) {
         console.error('Failed to fetch revenue series:', error)
@@ -68,7 +43,7 @@ export const dashboardService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/admin/order-status')
+        const response = await api.get('/admin/dashboard/order-status')
         return response.data
       } catch (error) {
         console.error('Failed to fetch order status:', error)
@@ -82,7 +57,7 @@ export const dashboardService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/admin/top-products?limit=${limit}`)
+        const response = await api.get(`/admin/dashboard/top-products?limit=${limit}`)
         return response.data
       } catch (error) {
         console.error('Failed to fetch top products:', error)
@@ -96,7 +71,7 @@ export const dashboardService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/admin/recent-orders?limit=${limit}`)
+        const response = await api.get(`/admin/dashboard/recent-orders?limit=${limit}`)
         return response.data
       } catch (error) {
         console.error('Failed to fetch recent orders:', error)
@@ -122,10 +97,13 @@ export const dashboardService = {
         return []
       }
     }
-    // LocalStorage fallback
-    const orders = orderService.getAll()
-    const products = productService.getAll()
-    const users = userService.getAll()
+    // LocalStorage fallback - PHẢI await, nếu không orders/products/users
+    // sẽ là Promise và buildNotifications sẽ lỗi khi đọc .filter/.map.
+    const [orders, products, users] = await Promise.all([
+      orderService.getAll(),
+      productService.getAll(),
+      userService.getAll(),
+    ])
     return buildNotifications(orders, products, users)
   },
 }

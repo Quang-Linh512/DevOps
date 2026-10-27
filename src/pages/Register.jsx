@@ -17,6 +17,7 @@ function Register() {
   })
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const update = (field) => (e) => {
     setForm((prev) => ({ ...prev, [field]: e.target.value }))
@@ -38,7 +39,7 @@ function Register() {
     return ''
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setSuccess('')
@@ -49,20 +50,29 @@ function Register() {
       return
     }
 
-    const result = register({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      phone: form.phone.trim(),
-      password: form.password,
-    })
+    setSubmitting(true)
+    try {
+      // register() là async -> phải await, nếu không result sẽ là Promise
+      // và result.success luôn undefined.
+      const result = await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        phone: form.phone.trim(),
+        password: form.password,
+      })
 
-    if (!result.success) {
-      setError(result.message)
-      return
+      if (!result?.success) {
+        setError(result?.message || 'Đăng ký thất bại')
+        return
+      }
+
+      setSuccess(result.message || 'Đăng ký thành công!')
+      setTimeout(() => navigate('/login'), 1200)
+    } catch (err) {
+      setError(err?.message || 'Đăng ký thất bại')
+    } finally {
+      setSubmitting(false)
     }
-
-    setSuccess(result.message)
-    setTimeout(() => navigate('/login'), 1200)
   }
 
   return (
@@ -105,8 +115,8 @@ function Register() {
             />
           </label>
 
-          <button type="submit" className="btn btn-primary btn-block">
-            Đăng ký
+          <button type="submit" className="btn btn-primary btn-block" disabled={submitting}>
+            {submitting ? 'Đang đăng ký...' : 'Đăng ký'}
           </button>
         </form>
 

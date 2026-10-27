@@ -15,9 +15,26 @@ function AdminSettings() {
     newPassword: '',
     confirmPassword: '',
   })
-  const [store, setStore] = useState(authService.getStoreSettings())
+  // getStoreSettings() là async -> không thể gọi đồng bộ trong useState
+  // (sẽ lưu Promise vào state). Phải tải bằng useEffect.
+  const [store, setStore] = useState(null)
   const [msg, setMsg] = useState('')
   const [err, setErr] = useState('')
+
+  useEffect(() => {
+    let active = true
+    authService
+      .getStoreSettings()
+      .then((data) => {
+        if (active) setStore(data)
+      })
+      .catch(() => {
+        if (active) setStore({})
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   useEffect(() => {
     if (user) {
@@ -35,14 +52,18 @@ function AdminSettings() {
     setErr(isError ? text : '')
   }
 
-  const saveProfile = (e) => {
+  const saveProfile = async (e) => {
     e.preventDefault()
-    updateProfile({
-      name: profile.name.trim(),
-      phone: profile.phone.trim(),
-      avatar: profile.avatar.trim(),
-    })
-    flash('Đã cập nhật hồ sơ admin')
+    try {
+      await updateProfile({
+        name: profile.name.trim(),
+        phone: profile.phone.trim(),
+        avatar: profile.avatar.trim(),
+      })
+      flash('Đã cập nhật hồ sơ admin')
+    } catch (error) {
+      flash(error.message || 'Không thể cập nhật hồ sơ admin', true)
+    }
   }
 
   const savePassword = async (e) => {
@@ -66,8 +87,13 @@ function AdminSettings() {
 
   const saveStore = async (e) => {
     e.preventDefault()
-    await authService.saveStoreSettings(store)
-    flash('Đã lưu cài đặt cửa hàng')
+    if (!store) return
+    try {
+      await authService.saveStoreSettings(store)
+      flash('Đã lưu cài đặt cửa hàng')
+    } catch (error) {
+      flash(error.message || 'Không thể lưu cài đặt cửa hàng', true)
+    }
   }
 
   const onAvatarUpload = (e) => {
@@ -76,6 +102,20 @@ function AdminSettings() {
     const reader = new FileReader()
     reader.onload = () => setProfile((p) => ({ ...p, avatar: String(reader.result) }))
     reader.readAsDataURL(file)
+  }
+
+  if (!store) {
+    return (
+      <div className="admin-page">
+        <div className="admin-page-head">
+          <div>
+            <h1>Cài đặt</h1>
+            <p>Hồ sơ admin, bảo mật và cửa hàng</p>
+          </div>
+        </div>
+        <div className="admin-card">Đang tải cài đặt cửa hàng...</div>
+      </div>
+    )
   }
 
   return (

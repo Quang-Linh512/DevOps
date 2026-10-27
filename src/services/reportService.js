@@ -1,50 +1,16 @@
 import api from './http'
 import { delay } from './storage'
-import { orderService } from './orderService'
-import { productService } from './productService'
-import { userService } from './userService'
 import { formatPrice } from '../data/products'
 
 const USE_REMOTE = import.meta.env.VITE_USE_REMOTE_API === 'true'
-
-function getRangeDates(filter) {
-  const now = new Date()
-  const to = now
-  const from = new Date(now)
-
-  switch (filter) {
-    case 'today':
-      from.setHours(0, 0, 0, 0)
-      break
-    case '7days':
-      from.setDate(now.getDate() - 6)
-      from.setHours(0, 0, 0, 0)
-      break
-    case '30days':
-      from.setDate(now.getDate() - 29)
-      from.setHours(0, 0, 0, 0)
-      break
-    case 'month':
-      from.setDate(1)
-      from.setHours(0, 0, 0, 0)
-      break
-    case 'year':
-      from.setMonth(0, 1)
-      from.setHours(0, 0, 0, 0)
-      break
-    default:
-      from.setDate(now.getDate() - 29)
-      from.setHours(0, 0, 0, 0)
-  }
-  return { from, to }
-}
 
 export const reportService = {
   async getReport(filter = '30days') {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/reports?filter=${filter}`)
+        // Backend mount báo cáo tại /api/admin/reports (routes/admin.js)
+        const response = await api.get(`/admin/reports?filter=${filter}`)
         return response.data
       } catch (error) {
         console.error('Failed to fetch report:', error)
@@ -57,7 +23,7 @@ export const reportService = {
   async exportCSV(filter = '30days') {
     if (USE_REMOTE) {
       try {
-        const response = await api.get(`/reports/export?filter=${filter}`, {
+        const response = await api.get(`/admin/reports/export?filter=${filter}`, {
           responseType: 'blob',
         })
         return response.data

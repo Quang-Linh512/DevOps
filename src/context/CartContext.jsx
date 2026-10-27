@@ -110,22 +110,29 @@ export function CartProvider({ children }) {
     }))
 
     try {
+      // Backend (routes/orders.js) đọc các trường: name, phone, address, note,
+      // paymentMethod, items. Gửi đúng tên trường để backend không nhận undefined.
       const order = await orderService.create({
-        ho_ten: orderInfo.name,
-        so_dien_thoai: orderInfo.phone,
-        dia_chi: orderInfo.address,
-        ghi_chu: orderInfo.note || '',
-        phuong_thuc_thanh_toan: orderInfo.paymentMethod,
-        phi_ship: shipping,
-        giam_gia: 0,
+        name: orderInfo.name,
+        phone: orderInfo.phone,
+        address: orderInfo.address,
+        note: orderInfo.note || '',
+        paymentMethod: orderInfo.paymentMethod || 'COD',
         items,
       })
 
       clearCart()
       showToast('Đặt hàng thành công!')
       return order
-    } catch {
-      // Fallback: vẫn tạo order local nếu API lỗi
+    } catch (error) {
+      // Khi dùng API thật: KHÔNG được nuốt lỗi rồi báo thành công giả.
+      // Đơn không tới backend thì admin sẽ không thấy -> phải báo lỗi cho user.
+      if (import.meta.env.VITE_USE_REMOTE_API === 'true') {
+        showToast(error?.message || 'Không thể đặt hàng. Vui lòng thử lại.', 'error')
+        throw error
+      }
+
+      // Chế độ mock (localStorage): vẫn tạo order local nếu API lỗi
       const localOrder = {
         id: `DH${Date.now()}`,
         createdAt: new Date().toISOString(),
@@ -156,21 +163,32 @@ export function CartProvider({ children }) {
     }
   }
 
+  /**
+   * Lấy đơn hàng của người dùng đang đăng nhập.
+   *
+   * - API thật: gọi GET /orders/me (backend đã lọc theo req.user._id).
+   * - LocalStorage: lọc theo userId, KHÔNG dùng `o.customer?.name` vì đó là
+   *   tên khách (luôn truthy) nên sẽ lộ đơn của người khác.
+   */
   const getOrdersByUser = async (userId) => {
     const { orderService } = await import('../services/orderService')
 
     try {
-      const orders = await orderService.getAll()
-      if (Array.isArray(orders)) {
-        return orders.filter((o) => o.userId === userId || o.customer?.name)
-      }
-      return []
+      const orders = await orderService.getMine()
+      if (!Array.isArray(orders)) return []
+      if (!userId) return orders
+      return orders.filter(
+        (o) => o.userId == null || String(o.userId) === String(userId)
+      )
     } catch {
       // Fallback to localStorage
       try {
         const raw = localStorage.getItem('devshop_orders')
         const orders = raw ? JSON.parse(raw) : []
-        return orders
+        if (!userId) return orders
+        return orders.filter(
+          (o) => o.userId == null || String(o.userId) === String(userId)
+        )
       } catch {
         return []
       }

@@ -46,12 +46,15 @@ export const productService = {
     await delay(100)
     if (USE_REMOTE) {
       try {
-        const response = await api.get('/products')
+        // Dấu "/" cuối là bắt buộc: Express không tự redirect khi thiếu,
+        // nên GET /products sẽ trả 404.
+        const response = await api.get('/products/')
         return Array.isArray(response.data) ? response.data : []
       } catch (error) {
+        // API thật lỗi -> KHÔNG fallback về dữ liệu localStorage giả,
+        // nếu không admin sẽ tưởng đã lưu trong khi thực ra chưa.
         console.error('Failed to fetch products from API:', error)
-        // Fallback to localStorage
-        return ensureProducts()
+        throw new Error(error.response?.data?.message || 'Không thể tải danh sách sản phẩm')
       }
     }
     return ensureProducts()
@@ -65,9 +68,7 @@ export const productService = {
         return response.data
       } catch (error) {
         console.error('Failed to fetch product:', error)
-        const product = ensureProducts().find((p) => String(p.id) === String(id))
-        if (!product) throw new Error('Không tìm thấy sản phẩm')
-        return product
+        throw new Error(error.response?.data?.message || 'Không tìm thấy sản phẩm')
       }
     }
     const product = ensureProducts().find((p) => String(p.id) === String(id))
@@ -79,7 +80,7 @@ export const productService = {
     await delay()
     if (USE_REMOTE) {
       try {
-        const response = await api.post('/products', payload)
+        const response = await api.post('/products/', payload)
         return response.data.product || response.data
       } catch (error) {
         throw new Error(error.response?.data?.message || 'Không thể tạo sản phẩm')

@@ -35,17 +35,45 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }, [])
 
+  /**
+   * Đăng nhập.
+   * Luôn trả về cùng một hình dạng:
+   *   { success: boolean, user: object|null, token: string|null, message?: string }
+   * - `success`  : đăng nhập có thành công không
+   * - `user`     : thông tin user đã đăng nhập (null nếu thất bại)
+   * - `token`    : JWT (null ở chế độ localStorage mock)
+   * - `message`  : thông báo lỗi khi thất bại
+   */
   const login = async (email, password) => {
     const result = await authService.login(email, password)
-    if (result.success && result.user) {
-      saveUser({ ...result.user, token: result.token })
-      setUser({ ...result.user, token: result.token })
+
+    if (!result?.success || !result.user) {
+      return {
+        success: false,
+        user: null,
+        token: null,
+        message: result?.message || 'Đăng nhập thất bại',
+      }
     }
-    return result
+
+    const token = result.token ?? result.user.token ?? null
+    const session = { ...result.user, token }
+    saveUser(session)
+    setUser(session)
+
+    return { success: true, user: session, token, message: result.message }
   }
 
+  /**
+   * Đăng ký.
+   * Luôn trả về: { success: boolean, message: string }
+   */
   const register = async (formData) => {
-    return authService.register(formData)
+    const result = await authService.register(formData)
+    return {
+      success: Boolean(result?.success),
+      message: result?.message || (result?.success ? 'Đăng ký thành công!' : 'Đăng ký thất bại'),
+    }
   }
 
   const logout = () => {
@@ -53,12 +81,26 @@ export function AuthProvider({ children }) {
     setUser(null)
   }
 
+  /**
+   * Cập nhật hồ sơ người dùng.
+   * Khi API thật: gọi PUT /auth/profile để lưu vào database.
+   * Khi mock: chỉ cập nhật localStorage.
+   */
   const updateProfile = async (updates) => {
     if (!user) return
-    // Update local storage
-    const updated = { ...user, ...updates }
-    saveUser(updated)
-    setUser(updated)
+    try {
+      const result = await authService.updateProfile(updates)
+      const updated = { ...user, ...(result?.user || result || updates) }
+      saveUser(updated)
+      setUser(updated)
+      return { success: true, user: updated }
+    } catch (error) {
+      // API lỗi -> vẫn cập nhật local để UI không bị kẹt
+      const updated = { ...user, ...updates }
+      saveUser(updated)
+      setUser(updated)
+      throw error
+    }
   }
 
   const changePassword = async (currentPassword, newPassword) => {

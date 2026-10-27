@@ -13,7 +13,7 @@ function Login() {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
 
@@ -23,24 +23,29 @@ function Login() {
     }
 
     setSubmitting(true)
-    const result = login(email.trim(), password)
-    setSubmitting(false)
+    try {
+      // login() là async -> phải await, nếu không result sẽ là Promise
+      // và result.success luôn undefined khiến form báo lỗi vô lý.
+      const result = await login(email.trim(), password)
 
-    if (!result.success) {
-      setError(result.message)
-      return
+      if (!result?.success) {
+        setError(result?.message || 'Đăng nhập thất bại')
+        return
+      }
+
+      navigate(from, { replace: true })
+    } catch (err) {
+      setError(err?.message || 'Đăng nhập thất bại')
+    } finally {
+      setSubmitting(false)
     }
-
-    navigate(from, { replace: true })
   }
 
   return (
     <div className="page auth-page">
       <div className="auth-card">
         <h1>Đăng nhập</h1>
-        <p className="auth-hint">
-          Demo: <strong>admin@devshop.com</strong> / <strong>123456</strong>
-        </p>
+        <p className="auth-hint">Đăng nhập để theo dõi đơn hàng và quản lý tài khoản của bạn.</p>
 
         {error && <div className="alert alert-error">{error}</div>}
 

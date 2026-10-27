@@ -1,4 +1,4 @@
-name: Build and Deploy
+﻿name: Build and Deploy
 
 on:
   push:
@@ -27,14 +27,20 @@ jobs:
           cache: 'npm'
           cache-dependency-path: package-lock.json
 
-      - name: Install dependencies
+      - name: Install frontend dependencies
         run: npm ci
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
 
       - name: Run linter
         run: npm run lint
 
-      - name: Run tests
+      - name: Run frontend tests
         run: npm run test
+
+      - name: Run backend API tests
+        run: npm run test:api
 
   # ============================================
   # Job 2: Build and Push Frontend Image
@@ -66,6 +72,7 @@ jobs:
             ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
           build-args: |
             VITE_API_URL=/api
+            VITE_USE_REMOTE_API=true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -113,11 +120,12 @@ jobs:
         env:
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           CORS_ORIGIN: ${{ secrets.CORS_ORIGIN }}
+          ADMIN_INITIAL_PASSWORD: ${{ secrets.ADMIN_INITIAL_PASSWORD }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: JWT_SECRET,CORS_ORIGIN
+          envs: JWT_SECRET,CORS_ORIGIN,ADMIN_INITIAL_PASSWORD
           script: |
             set -e
 
@@ -136,6 +144,12 @@ jobs:
               exit 1
             fi
 
+            # ADMIN_INITIAL_PASSWORD là tùy chọn: nếu set, backend sẽ tự tạo
+            # tài khoản admin (admin@devshop.com) khi khởi động lần đầu.
+            if [ -z "$ADMIN_INITIAL_PASSWORD" ]; then
+              echo "WARNING: ADMIN_INITIAL_PASSWORD not set - admin account will NOT be created"
+            fi
+
             umask 0077
             sudo mkdir -p /opt/devops-shop
             sudo chown ubuntu:ubuntu /opt/devops-shop
@@ -145,6 +159,9 @@ jobs:
             printf 'JWT_SECRET=%s\n' "$JWT_SECRET" > .env
             printf 'CORS_ORIGIN=%s\n' "$CORS_ORIGIN" >> .env
             printf 'SEED_ON_START=false\n' >> .env
+            if [ -n "$ADMIN_INITIAL_PASSWORD" ]; then
+              printf 'ADMIN_INITIAL_PASSWORD=%s\n' "$ADMIN_INITIAL_PASSWORD" >> .env
+            fi
             chmod 600 .env
 
             # Verify .env was created correctly (without exposing secrets)
@@ -160,6 +177,11 @@ jobs:
 
             # Create docker-compose.prod.yml
             cat > docker-compose.prod.yml << 'COMPOSEEOF'
+            # `name:` cố định để tên project và tên volume MongoDB
+            # (devops-shop_mongo_data) không đổi giữa các lần deploy ->
+            # dữ liệu database được giữ nguyên.
+            name: devops-shop
+
             services:
               frontend:
                 image: ${FRONTEND_IMAGE}:latest
@@ -262,6 +284,18 @@ jobs:
               exit 1
             fi
 
+            # Ensure admin account exists (idempotent - does NOT delete or reseed data)
+            if [ -n "$ADMIN_INITIAL_PASSWORD" ]; then
+              echo "Ensuring admin account exists..."
+              sudo docker exec \
+                -e ADMIN_INITIAL_PASSWORD="$ADMIN_INITIAL_PASSWORD" \
+                -e MONGODB_URI="mongodb://mongo:27017/devops-shop" \
+                devshop-backend node src/seed.js --create-admin
+              echo "Admin account ensured"
+            else
+              echo "Skipping admin creation: ADMIN_INITIAL_PASSWORD not set"
+            fi
+
             # Verify frontend is running
             echo "Checking Frontend..."
             if ! sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps | grep -q "devshop-frontend"; then
@@ -272,10 +306,10 @@ jobs:
 
             # Test API endpoint through Nginx proxy
             echo "Testing API endpoint..."
-            API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/products || echo "000")
+            API_RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/api/products/ || echo "000")
             if [ "$API_RESPONSE" != "200" ]; then
               echo "ERROR: API endpoint returned $API_RESPONSE (expected 200)"
-              curl -s http://localhost:8080/api/products | head -c 200
+              curl -s http://localhost:8080/api/products/ | head -c 200
               exit 1
             fi
             echo "API endpoint test passed (HTTP $API_RESPONSE)"

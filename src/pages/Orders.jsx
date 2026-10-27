@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatPrice } from '../data/products'
 import { useAuth } from '../context/AuthContext'
@@ -8,6 +8,7 @@ function statusClass(status) {
   switch (status) {
     case 'Chờ xác nhận':
       return 'status-pending'
+    case 'Đã xác nhận':
     case 'Đang giao':
       return 'status-shipping'
     case 'Đã giao':
@@ -23,7 +24,53 @@ function Orders() {
   const { user } = useAuth()
   const { getOrdersByUser } = useCart()
 
-  const orders = useMemo(() => getOrdersByUser(user.id), [user.id, getOrdersByUser])
+  // getOrdersByUser là async -> không thể dùng useMemo (useMemo phải trả về
+  // giá trị đồng bộ, nếu không orders sẽ là Promise và orders.length là undefined).
+  const [orders, setOrders] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let active = true
+    setLoading(true)
+    setError('')
+    getOrdersByUser(user?.id)
+      .then((data) => {
+        if (!active) return
+        setOrders(Array.isArray(data) ? data : [])
+      })
+      .catch(() => {
+        if (!active) return
+        setError('Không thể tải lịch sử đơn hàng. Vui lòng thử lại.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [user?.id, getOrdersByUser])
+
+  if (loading) {
+    return (
+      <div className="page">
+        <div className="container empty-state">
+          <h1>Đang tải đơn hàng...</h1>
+        </div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="page">
+        <div className="container empty-state">
+          <h1>Lỗi tải đơn hàng</h1>
+          <p>{error}</p>
+        </div>
+      </div>
+    )
+  }
 
   if (orders.length === 0) {
     return (
