@@ -12,7 +12,7 @@ env:
 
 jobs:
   # ============================================
-  # Job 1: Lint và Test Frontend
+  # Job 1: Lint and Test Frontend
   # ============================================
   frontend-test:
     runs-on: ubuntu-latest
@@ -37,7 +37,7 @@ jobs:
         run: npm run test
 
   # ============================================
-  # Job 2: Build và Push Frontend Image
+  # Job 2: Build and Push Frontend Image
   # ============================================
   build-frontend:
     runs-on: ubuntu-latest
@@ -70,7 +70,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ============================================
-  # Job 3: Build và Push Backend Image
+  # Job 3: Build and Push Backend Image
   # ============================================
   build-backend:
     runs-on: ubuntu-latest
@@ -137,7 +137,8 @@ jobs:
             fi
 
             umask 0077
-            mkdir -p /opt/devops-shop
+            sudo mkdir -p /opt/devops-shop
+            sudo chown ubuntu:ubuntu /opt/devops-shop
             cd /opt/devops-shop
 
             # Create .env file with secrets (using printf to handle special chars)
@@ -154,8 +155,8 @@ jobs:
 
             # Pull latest images
             echo "Pulling latest images..."
-            docker pull ${FRONTEND_IMAGE}:latest
-            docker pull ${BACKEND_IMAGE}:latest
+            sudo docker pull ${FRONTEND_IMAGE}:latest
+            sudo docker pull ${BACKEND_IMAGE}:latest
 
             # Create docker-compose.prod.yml
             cat > docker-compose.prod.yml << 'COMPOSEEOF'
@@ -220,18 +221,18 @@ jobs:
 
             # Update services (keep volumes, only recreate changed containers)
             echo "Updating services..."
-            docker compose -f docker-compose.prod.yml up -d --remove-orphans
+            sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
             # Wait for MongoDB to be healthy
             echo "Waiting for MongoDB..."
             for i in $(seq 1 30); do
-              if docker exec devshop-mongo mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
+              if sudo docker exec devshop-mongo mongosh --eval "db.adminCommand('ping')" > /dev/null 2>&1; then
                 echo "MongoDB is ready"
                 break
               fi
               if [ $i -eq 30 ]; then
                 echo "ERROR: MongoDB failed to start within 30 seconds"
-                docker compose -f docker-compose.prod.yml ps
+                sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps
                 exit 1
               fi
               sleep 1
@@ -241,7 +242,7 @@ jobs:
             echo "Waiting for Backend..."
             BACKEND_HEALTHY=false
             for i in $(seq 1 20); do
-              RESPONSE=$(docker exec devshop-backend wget -qO- http://localhost:5000/health 2>/dev/null || echo "")
+              RESPONSE=$(sudo docker exec devshop-backend wget -qO- http://localhost:5000/health 2>/dev/null || echo "")
               if echo "$RESPONSE" | grep -q '"status":"ok"'; then
                 echo "Backend is healthy"
                 BACKEND_HEALTHY=true
@@ -249,8 +250,8 @@ jobs:
               fi
               if [ $i -eq 20 ]; then
                 echo "ERROR: Backend failed to become healthy within 60 seconds"
-                docker compose -f docker-compose.prod.yml ps
-                docker logs devshop-backend --tail 50
+                sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps
+                sudo docker logs devshop-backend --tail 50
                 exit 1
               fi
               sleep 3
@@ -263,9 +264,9 @@ jobs:
 
             # Verify frontend is running
             echo "Checking Frontend..."
-            if ! docker compose -f docker-compose.prod.yml ps | grep -q "devshop-frontend"; then
+            if ! sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps | grep -q "devshop-frontend"; then
               echo "ERROR: Frontend container not found"
-              docker compose -f docker-compose.prod.yml ps
+              sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps
               exit 1
             fi
 
@@ -282,4 +283,4 @@ jobs:
             # Final status
             echo "Deployment completed successfully"
             echo "Container Status:"
-            docker compose -f docker-compose.prod.yml ps
+            sudo env FRONTEND_IMAGE="$FRONTEND_IMAGE" BACKEND_IMAGE="$BACKEND_IMAGE" docker compose -f docker-compose.prod.yml ps

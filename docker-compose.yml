@@ -1,10 +1,23 @@
-# Production Docker Compose
-# DevOps Shop - React + Node.js + MongoDB
+# Production Docker Compose - DevOps Shop
+# React (Nginx) + Node.js/Express + MongoDB
+#
+# Biến môi trường được nội suy từ file .env nằm cạnh file này.
+# Docker Compose tự động đọc .env trong thư mục chứa file compose khi chạy
+# `docker compose -f <file>`, nên không cần export biến ra shell (quan trọng khi
+# chạy qua `sudo`, vì sudo xóa sạch environment).
+#
+#   NODE_ENV, JWT_SECRET, CORS_ORIGIN, SEED_ON_START, ADMIN_INITIAL_PASSWORD
+#   IMAGE_TAG, FRONTEND_IMAGE, BACKEND_IMAGE
+#
+# `name:` được cố định để tên project (và tên volume MongoDB) không đổi giữa
+# các lần deploy -> dữ liệu database được giữ nguyên.
+
+name: devops-shop
 
 services:
-  # Frontend - React App với Nginx
+  # Frontend - React build + Nginx phục vụ static files
   frontend:
-    image: qlinh48/devops-shop-frontend:latest
+    image: ${FRONTEND_IMAGE:-qlinh48/devops-shop-frontend}:${IMAGE_TAG:-latest}
     container_name: devshop-frontend
     ports:
       - "8080:80"
@@ -17,15 +30,16 @@ services:
 
   # Backend - Node.js + Express + MongoDB
   backend:
-    image: qlinh48/devops-shop-backend:latest
+    image: ${BACKEND_IMAGE:-qlinh48/devops-shop-backend}:${IMAGE_TAG:-latest}
     container_name: devshop-backend
+    # env_file: truyền nguyên văn giá trị vào container (không qua nội suy
+    # ${VAR}) nên ký tự đặc biệt trong secret không bị biến đổi.
+    env_file:
+      - .env
     environment:
-      - NODE_ENV=production
-      - PORT=5000
-      - MONGODB_URI=mongodb://mongo:27017/devops-shop
-      - JWT_SECRET=${JWT_SECRET:?JWT_SECRET required}
-      - CORS_ORIGIN=${CORS_ORIGIN:-http://localhost:8080}
-      - SEED_ON_START=${SEED_ON_START:-false}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "5000"
+      MONGODB_URI: mongodb://mongo:27017/devops-shop
     restart: unless-stopped
     networks:
       - devshop-network
@@ -39,7 +53,7 @@ services:
       retries: 3
       start_period: 40s
 
-  # Database - MongoDB
+  # Database - MongoDB (volume named để giữ dữ liệu)
   mongo:
     image: mongo:7
     container_name: devshop-mongo
